@@ -18,19 +18,30 @@ import {
   SLOT_NAMES,
   T10_TIERS,
 } from "./engine/chargeCalc";
+import { ArenaTeamBuilder } from "./components/ArenaTeamBuilder";
 import { RerollAdvisor } from "./components/RerollAdvisor";
 import { ReferenceTables } from "./components/ReferenceTables";
 import { FormulaAudit } from "./components/FormulaAudit";
 
-type ActiveTab = "calc" | "tables" | "audit";
+type ActiveTab = "arena" | "calc" | "tables" | "audit";
 
 function parseInitialStateFromUrl(): {
+  tab: ActiveTab;
   presetId: CharacterPresetId;
   customC0: number;
   gearBps: [number, number, number, number];
   cubeBp: number;
 } {
   const params = new URLSearchParams(window.location.search);
+  const rawTab = params.get("tab") as ActiveTab | null;
+  const hasSingleParams = params.has("p") || params.has("g");
+  const tab: ActiveTab =
+    rawTab === "arena" || rawTab === "calc" || rawTab === "tables" || rawTab === "audit"
+      ? rawTab
+      : hasSingleParams
+      ? "calc"
+      : "arena";
+
   const rawPreset = params.get("p") as CharacterPresetId | null;
   const validPreset = CHARACTER_PRESETS.some((p) => p.id === rawPreset)
     ? (rawPreset as CharacterPresetId)
@@ -49,13 +60,13 @@ function parseInitialStateFromUrl(): {
   const rawCube = parseInt(params.get("c") || "", 10);
   const cubeBp = CUBE_OPTIONS.some((c) => c.bp === rawCube) ? rawCube : 0;
 
-  return { presetId: validPreset, customC0, gearBps, cubeBp };
+  return { tab, presetId: validPreset, customC0, gearBps, cubeBp };
 }
 
 export default function App() {
   const initial = useMemo(() => parseInitialStateFromUrl(), []);
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>("calc");
+  const [activeTab, setActiveTab] = useState<ActiveTab>(initial.tab);
   const [presetId, setPresetId] = useState<CharacterPresetId>(initial.presetId);
   const [customC0, setCustomC0] = useState<number>(initial.customC0);
   const [gearBps, setGearBps] = useState<[number, number, number, number]>(initial.gearBps);
@@ -75,16 +86,18 @@ export default function App() {
 
   const initC = presetId === "custom" ? Math.max(10, customC0) : preset.initC;
 
-  // Keep URL query synchronized for effortless sharing
   useEffect(() => {
     const params = new URLSearchParams();
-    params.set("p", presetId);
-    if (presetId === "custom") params.set("c0", String(initC));
-    params.set("g", gearBps.join(","));
-    if (cubeBp > 0) params.set("c", String(cubeBp));
+    params.set("tab", activeTab);
+    if (activeTab === "calc") {
+      params.set("p", presetId);
+      if (presetId === "custom") params.set("c0", String(initC));
+      params.set("g", gearBps.join(","));
+      if (cubeBp > 0) params.set("c", String(cubeBp));
+    }
     const nextUrl = `${window.location.pathname}?${params.toString()}`;
     window.history.replaceState(null, "", nextUrl);
-  }, [presetId, initC, gearBps, cubeBp]);
+  }, [activeTab, presetId, initC, gearBps, cubeBp]);
 
   const loadoutInput = useMemo(
     () => ({
@@ -138,7 +151,7 @@ export default function App() {
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
-      // Fallback ignored if clipboard denied
+      // ignore
     }
   };
 
@@ -153,62 +166,72 @@ export default function App() {
         <div>
           <div className="hud-eyebrow">
             <span className="hud-eyebrow-dot" />
-            <span>ARK BALLISTICS TELEMETRY · NK.RUNTIME V23.4 解包校准</span>
+            <span>ARK ARENA TOOLS V2.0 · NK.RUNTIME V23.4 源码解包校准</span>
           </div>
-          <h1 className="hud-title">NIKKE PvP 蓄速减帧 &amp; 洗词条计算器</h1>
+          <h1 className="hud-title">NIKKE PvP 5v5 充能排轴 &amp; 蓄速计算器</h1>
           <p className="hud-subtitle">
-            修正 <strong>贝斯蒂：战术升级 (2.00s)</strong> 与{" "}
-            <strong>莉贝雷里奥 (1.50s)</strong> 公式偏差 · 支持同值合并取整、本质有效蓄速与 60fps 帧数换算
+            独立开源实现 · 彻底修复 <strong>贝斯蒂：战术升级 (2.00s)</strong> 与{" "}
+            <strong>莉贝雷里奥 (1.50s)</strong> 蓄速减帧错误 · 支持国服/国际服转身帧差与单件洗词条决策
           </p>
         </div>
 
         <div className="hud-actions">
           <button className="btn" onClick={handleCopyLink}>
             {copied ? <Check size={14} color="var(--accent-green)" /> : <Link2 size={14} />}
-            <span>{copied ? "已复制配装链接" : "复制当前配装链接"}</span>
+            <span>{copied ? "已复制页面链接" : "复制分享链接"}</span>
           </button>
-          <button
-            className="btn"
-            onClick={() => {
-              setGearBps([0, 0, 0, 0]);
-              setCubeBp(0);
-              setAllyUserPct("0");
-              setAllyTargetPct("0");
-            }}
-          >
-            <RotateCcw size={14} />
-            <span>重置词条</span>
-          </button>
+          {activeTab === "calc" && (
+            <button
+              className="btn"
+              onClick={() => {
+                setGearBps([0, 0, 0, 0]);
+                setCubeBp(0);
+                setAllyUserPct("0");
+                setAllyTargetPct("0");
+              }}
+            >
+              <RotateCcw size={14} />
+              <span>重置词条</span>
+            </button>
+          )}
         </div>
       </header>
 
       <nav className="nav-tabs" aria-label="功能导航">
         <button
+          className={`nav-tab ${activeTab === "arena" ? "active" : ""}`}
+          onClick={() => setActiveTab("arena")}
+        >
+          <span className="nav-tab-num">01</span>
+          <span>5v5 竞技场排轴 &amp; 充能曲线</span>
+        </button>
+        <button
           className={`nav-tab ${activeTab === "calc" ? "active" : ""}`}
           onClick={() => setActiveTab("calc")}
         >
-          <span className="nav-tab-num">01</span>
-          <span>实时计算 &amp; 洗词条助手</span>
+          <span className="nav-tab-num">02</span>
+          <span>单角色蓄速 &amp; 洗词条助手</span>
         </button>
         <button
           className={`nav-tab ${activeTab === "tables" ? "active" : ""}`}
           onClick={() => setActiveTab("tables")}
         >
-          <span className="nav-tab-num">02</span>
+          <span className="nav-tab-num">03</span>
           <span>60fps 全档位表 &amp; T10 收益矩阵</span>
         </button>
         <button
           className={`nav-tab ${activeTab === "audit" ? "active" : ""}`}
           onClick={() => setActiveTab("audit")}
         >
-          <span className="nav-tab-num">03</span>
+          <span className="nav-tab-num">04</span>
           <span>解包源码原理 &amp; nikke.top 误差对比</span>
         </button>
       </nav>
 
+      {activeTab === "arena" && <ArenaTeamBuilder />}
+
       {activeTab === "calc" && (
         <div className="workspace-grid">
-          {/* Left column: Character + Gear + Cube + Buffs */}
           <div className="stack-md">
             <section className="panel">
               <div className="panel-header">
@@ -446,7 +469,6 @@ export default function App() {
             </section>
           </div>
 
-          {/* Right column: Live HUD Telemetry + Grouping Breakdown + Reroll Advisor */}
           <div className="stack-md">
             <section className="panel">
               <div className="panel-header">
@@ -519,7 +541,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Live comparison warnings */}
                 {showNikkeTopComparison && result.nikkeTop.diffVsTrueFrames60 !== 0 && (
                   <div className="alert-box danger">
                     <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
@@ -553,7 +574,6 @@ export default function App() {
                     </div>
                   )}
 
-                {/* Grouping Breakdown Table */}
                 {result.groups.length > 0 && (
                   <div className="stack-sm">
                     <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-secondary)" }}>
@@ -615,7 +635,7 @@ export default function App() {
 
       <footer className="footer">
         <span>
-          公式依据：胜利女神客户端 <code className="mono">NK.Runtime.dll</code>（SpotFunctionLogic /
+          独立开源实现 · 公式依据：客户端 <code className="mono">NK.Runtime.dll</code>（SpotFunctionLogic /
           FunctionContext / WeaponLogic / SpotSimulationRunner）解包验证
         </span>
         <span className="mono">30Hz 逻辑帧 × 0.033f → 60fps 折算 (×2)</span>
